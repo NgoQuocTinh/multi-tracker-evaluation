@@ -1,0 +1,4 @@
+ByteTrack | time: 11.46s | FPS: 37.42 | Frames: 429
+BOTSORT | time: 23.45s | FPS: 18.29 | Frames: 429
+DeepSORT | time: 119.40s | FPS: 3.59 | Frames: 429
+SORT | time: 6.24s | FPS: 68.79 | Frames: 429

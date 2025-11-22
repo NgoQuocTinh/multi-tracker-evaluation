@@ -1,6 +1,6 @@
 """
 evaluate.py - Compare tracker outputs against ground truth using MOT metrics.
-Also logs runtime and FPS per tracker.
+Uses fps_log.txt to get runtime and FPS.
 """
 
 import os
@@ -8,18 +8,18 @@ import motmetrics as mm
 import numpy as np
 import pandas as pd
 
+# CONFIG
 GT_FILE = 'data/gt.txt'
-RUNTIME_LOG = 'evaluation_results/runtime_log.txt'
-OUTPUT_CSV = 'evaluation_results/tracker_comparison.csv'
+OUTPUT_CSV = 'evaluation_results_1/tracker_comparison.csv'
 
 TRACKERS = {
-    'DeepSORT': 'results/results_deepsort.txt',
-    'BOTSort': 'results/results_botsort.txt',
-    'ByteTrack': 'results/results_bytetrack.txt'
+    'DeepSORT': 'results_1/results_deepsort.txt',
+    'BOTSort': 'results_1/results_botsort.txt',
+    'ByteTrack': 'results_1/results_bytetrack.txt',
+    'SORT': 'results_1/results_sort.txt'
 }
 
-os.makedirs('evaluation_results', exist_ok=True)
-
+os.makedirs(os.path.dirname(OUTPUT_CSV), exist_ok=True)
 
 def load_tracking_results(file_path):
     """Load tracking results or ground truth from a CSV file into a DataFrame and compute derived coordinates."""
@@ -28,7 +28,6 @@ def load_tracking_results(file_path):
     data['x2'] = data['x'] + data['w']
     data['y2'] = data['y'] + data['h']
     return data
-
 
 def calculate_mot_metrics(gt, predictions):
     """Compute MOT metrics for a single tracker given the ground truth and predictions."""
@@ -51,37 +50,43 @@ def calculate_mot_metrics(gt, predictions):
     )
     return summary
 
-
-def read_runtimes(log_path):
-    """Parse the runtime log file and return a dictionary of runtimes by tracker name."""
-    runtimes = {}
-    if os.path.exists(log_path):
-        with open(log_path, 'r') as f:
+def read_fps_runtime(tracker_name, tracker_file):
+    """Read runtime and FPS from fps_log.txt in the same folder as tracker results."""
+    folder = os.path.dirname(tracker_file)
+    fps_file = os.path.join(folder, "fps_log.txt")
+    runtime_sec = None
+    fps_value = None
+    if os.path.exists(fps_file):
+        with open(fps_file, "r") as f:
             for line in f:
-                try:
-                    name, time_str = line.strip().split(':')
-                    runtimes[name.strip().lower()] = float(time_str.strip())
-                except ValueError:
+                # Split line by '|'
+                parts = [p.strip() for p in line.strip().split('|')]
+                if len(parts) < 4:
                     continue
-    return runtimes
-
+                name = parts[0].strip()
+                # Compare exact match, ignore case
+                if name.lower() == tracker_name.lower():
+                    for part in parts[1:]:
+                        if part.lower().startswith('time:'):
+                            runtime_sec = float(part.split(':')[1].strip().replace('s',''))
+                        elif part.lower().startswith('fps:'):
+                            fps_value = float(part.split(':')[1].strip())
+                    break
+    return runtime_sec, fps_value
 
 
 def main():
-    """Main function that loads GT, evaluates each tracker, and printssaves the metric summary."""
     print("Loading ground truth...")
     gt = load_tracking_results(GT_FILE)
-    runtimes = read_runtimes(RUNTIME_LOG)
 
     all_metrics = []
 
     for tracker_name, tracker_file in TRACKERS.items():
-        print(f"Processing tracker: {tracker_name}")
+        print(f"\nProcessing tracker: {tracker_name}")
         predictions = load_tracking_results(tracker_file)
         mot_summary = calculate_mot_metrics(gt, predictions)
 
-        frame_count = predictions['frame'].max() + 1
-        runtime_sec = runtimes.get(tracker_name.lower(), None)
+        runtime_sec, fps = read_fps_runtime(tracker_name, tracker_file)
 
         tracker_metrics = {
             'Tracker': tracker_name,
@@ -95,6 +100,7 @@ def main():
             'Estimated ID Switches': predictions.groupby('id')['frame']
                 .apply(lambda x: np.sum(np.diff(sorted(x)) > 1)).sum(),
             'Runtime (s)': runtime_sec if runtime_sec else 'NA',
+            'FPS': fps if fps else 'NA'
         }
 
         all_metrics.append(tracker_metrics)
@@ -104,7 +110,6 @@ def main():
 
     print("\nComparative Tracker Evaluation Metrics:")
     print(comparison_df.to_string(index=False))
-
 
 if __name__ == '__main__':
     main()

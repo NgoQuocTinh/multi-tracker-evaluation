@@ -1,32 +1,23 @@
 import os
 import cv2
 import sys
-from deep_sort_realtime.deepsort_tracker import DeepSort
 import time
+from deep_sort_realtime.deepsort_tracker import DeepSort
 
-# Parameters (Adjust based on your use-case)
-VIDEO_PATH = 'data/input_video.mp4'
+
+# CONFIG
+VIDEO_PATH = 'data/video_1.mp4'
 DETECTIONS_FILE = 'data/detections.txt'
-OUTPUT_FILE = 'results/results_deepsort.txt'
-MAX_AGE = 30  # How many frames a track persists without detections
+OUTPUT_FILE = 'results_1/results_deepsort.txt'
+MAX_AGE = 30  # frames a track persists without detections
 
-for file in [VIDEO_PATH, DETECTIONS_FILE]:
-    if not os.path.exists(file):
-        print(f"Error: Required file {file} not found.")
-        sys.exit(1)
-
-
-# Mapping for class IDs if needed.
-# YOLOv8 (COCO) 'person' is class_id 0. MOT17 'pedestrian' is class_id 1.
-# We will map YOLO's person (0) to MOT17's pedestrian (1) in the output.
+# Class mapping (YOLO person → MOT pedestrian)
 CLASS_ID_MAP = {
-    0: 1,  # Map YOLO's 'person' (class 0) to MOT17's 'pedestrian' (class 1)
+    0: 1,
 }
 
-
-# Load detections
 def load_detections(detection_file):
-    """Load precomputed YOLO detections from file and organize them by frame."""
+    """Load detections from file and organize by frame."""
     detections = {}
     try:
         with open(detection_file, 'r') as f:
@@ -38,41 +29,40 @@ def load_detections(detection_file):
                     det = [float(x1), float(y1), float(x2), float(y2), float(conf), int(cls)]
                     detections.setdefault(frame, []).append(det)
     except FileNotFoundError:
-        print(f"Error: Detections file not found at {detection_file}. Please ensure detect.py has been run.")
-        exit()
+        print(f"Error: Detections file not found at {detection_file}. Please run detection first.")
+        sys.exit(1)
     return detections
 
-
-def main():
-    """Run DeepSORT tracker on the input video using precomputed detections and save results in MOT format."""
-    tracker = DeepSort(max_age=MAX_AGE)  # tracks persist up to 30 frames
+def run_deepsort():
+    """Run DeepSORT tracker and return number of frames processed."""
+    tracker = DeepSort(max_age=MAX_AGE)
     detections = load_detections(DETECTIONS_FILE)
+
     cap = cv2.VideoCapture(VIDEO_PATH)
     if not cap.isOpened():
-        print(f"Error: Could not open video file at {VIDEO_PATH}. Please ensure the path is correct.")
-        exit()
+        print(f"Error: Could not open video file at {VIDEO_PATH}")
+        sys.exit(1)
 
     os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
 
+    total_frames = 0
     print(f"Starting DeepSORT tracking. Results will be written to {OUTPUT_FILE}")
 
     with open(OUTPUT_FILE, 'w') as out:
         frame_id = 0
-        while cap.isOpened():
+        while True:
             ret, frame = cap.read()
             if not ret:
                 break
 
+            total_frames += 1
             frame_dets = detections.get(frame_id, [])
             input_dets = []
+
             for det in frame_dets:
                 x1, y1, x2, y2, conf, cls = det
                 w, h = x2 - x1, y2 - y1
-
-                # Apply class ID mapping for input to DeepSort (if DeepSort uses it)
-                # and for consistency in output.
-                mapped_cls = CLASS_ID_MAP.get(cls, cls)  # Use mapped ID, or original if not in map
-
+                mapped_cls = CLASS_ID_MAP.get(cls, cls)
                 input_dets.append(([x1, y1, w, h], conf, frame, mapped_cls))
 
             tracks = tracker.update_tracks(input_dets, frame=frame)
@@ -81,34 +71,34 @@ def main():
                 if not track.is_confirmed():
                     continue
                 track_id = track.track_id
-                ltrb = track.to_ltrb()  # Get bbox in (left, top, right, bottom) format
+                ltrb = track.to_ltrb()  # left, top, right, bottom
                 x1, y1, x2, y2 = map(int, ltrb)
                 w, h = x2 - x1, y2 - y1
-                conf = 1.0  # DeepSORT typically doesn't output confidence per track directly, use 1.0 or average detection conf
+                conf = 1.0  # DeepSORT track confidence
+                output_cls = 1  # Assume all tracks are pedestrians
 
-                # DeepSort's track object doesn't directly expose the class_id from the initial detection.
-                # Since we are mapping YOLO's person (0) to MOT17's pedestrian (1) for evaluation,
-                # we'll assume all confirmed tracks are of the target class (1).
-                output_cls = 1  # Assuming all tracked objects are persons/pedestrians for MOT17 evaluation
-
-                # Write in MOT Challenge format: frame, id, x, y, width, height, confidence, class_id, visibility
+                # MOT format
                 out.write(f"{frame_id},{track_id},{x1},{y1},{w},{h},{conf:.2f},{output_cls},1\n")
 
             frame_id += 1
 
     cap.release()
     print(f"DeepSORT tracking complete. Results saved to {OUTPUT_FILE}")
-
+    return total_frames
 
 if __name__ == '__main__':
     start_time = time.time()
-    main()
+    total_frames = run_deepsort()
     end_time = time.time()
+
     elapsed = end_time - start_time
-    tracker_name = "DeepSORT"
-    os.makedirs("evaluation_results", exist_ok=True)
-    with open("evaluation_results/runtime_log.txt", "a") as f:
-        f.write(f"{tracker_name}: {elapsed:.2f}\n")
+    fps = total_frames / elapsed if total_frames > 0 else 0.0
 
-    print(f"{tracker_name} tracking completed in {elapsed:.2f} seconds.")
+    # Save FPS in same folder as results
+    output_dir = os.path.dirname(OUTPUT_FILE)
+    fps_file = os.path.join(output_dir, "fps_log.txt")
 
+    with open(fps_file, "a") as f:
+        f.write(f"DeepSORT | time: {elapsed:.2f}s | FPS: {fps:.2f} | Frames: {total_frames}\n")
+
+    print(f"DeepSORT tracking completed in {elapsed:.2f}s, FPS: {fps:.2f}")

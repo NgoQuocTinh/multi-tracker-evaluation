@@ -4,9 +4,9 @@ import sys
 from ultralytics import YOLO
 
 # Parameters (Adjust as needed)
-VIDEO_PATH = 'data/input_video.mp4'
+VIDEO_PATH = 'data/video_1.mp4'
 OUTPUT_PATH = 'data/detections.txt'
-MODEL_PATH = 'yolov8s.pt'  # Options: yolov8n.pt, yolov8s.pt, yolov8m.pt, yolov8l.pt, yolov8x.pt
+MODEL_PATH = 'yolov8n.pt'  # Options: yolov8n.pt, yolov8s.pt, yolov8m.pt, yolov8l.pt, yolov8x.pt
 CONF_THRESHOLD = 0.3  # Confidence threshold for detections
 
 if not os.path.exists(VIDEO_PATH):
