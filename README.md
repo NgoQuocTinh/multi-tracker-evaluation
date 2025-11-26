@@ -21,12 +21,18 @@ This project compares three bounding-box trackers—ByteTrack, DeepSORT, and BOT
 * An advanced tracker integrating IoU tracking with motion modeling.
 * Balances tracking precision and computational efficiency, suited for real-time applications.
 
+### SORT
+* A simple tracking method with IoU
+
 ## Setup Instructions
 
 ### Prerequisites
 
 * Python 3.8 or higher
 * Recommended: Anaconda or virtual environment
+
+### Use the multitracking_eval notebook to run the eval of 4 method with MOT 20 data, download from kaggle
+
 
 ### Installation
 
